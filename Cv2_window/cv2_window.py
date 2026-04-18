@@ -74,6 +74,11 @@ class Cv2Window:
             
         self._running = False
         self._close_event.set()
+
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=2.0)
+            if self._thread.is_alive():
+                logger.warning(f"Thread for window '{self.name}' did not terminate gracefully.")
         
         try:
             cv2.destroyWindow(self.name)
@@ -81,10 +86,6 @@ class Cv2Window:
             if e.code != -27:
                 logger.error(f"Error destroying window: {e}")
 
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
-            if self._thread.is_alive():
-                logger.warning(f"Thread for window '{self.name}' did not terminate gracefully.")
         
         self._thread = None
         logger.info(f"Window '{self.name}' closed.")
