@@ -15,7 +15,7 @@ class Cv2Window:
     Supports multi-threaded image updates, custom mouse/keyboard event handling, 
     automatic scaling, and centered display.
     """
-    def __init__(self, pic: np.ndarray, name: str, fps: int = 24, auto_scale: float = 0.8):
+    def __init__(self, pic: np.ndarray, name: str, fps: int = 24, auto_scale: float = 0.8, auto_copy: bool = True):
         """
         Initialize Cv2Window.
         
@@ -24,8 +24,10 @@ class Cv2Window:
         :param fps: Refresh frame rate.
         :param auto_scale: Maximum ratio of screen occupied by the window (0.0 - 1.0). 
                            If 0, automatic scaling is disabled.
+        :param auto_copy: If True, a copy of the image is made for each update.
         """
-        self._pic = pic.copy()
+        self.auto_copy = auto_copy
+        self._pic = pic.copy() if auto_copy else pic
         self.name = name
         self.fps = max(1, fps)
         self.auto_scale = max(0, min(1.0, auto_scale))
@@ -98,7 +100,7 @@ class Cv2Window:
             return
             
         with self._pic_lock:
-            self._pic = pic.copy()
+            self._pic = pic.copy() if self.auto_copy else pic
 
     def change_mouse_event(self, event: int, function: Callable[[int, int, int, int, any], None]):
         """
@@ -137,18 +139,18 @@ class Cv2Window:
                 if cv2.getWindowProperty(self.name, cv2.WND_PROP_VISIBLE) < 1:
                     break
                 key = cv2.waitKey(wait_time) & 0xFF
-                self._board_event_handler(key)
+                if key != 255:
+                    self._board_event_handler(key)
 
                 # Display
                 with self._pic_lock:
-                    current_pic = self._pic.copy()
+                    current_pic = self._pic.copy() if self.auto_copy else self._pic
                 
                 if current_pic is not None and current_pic.size > 0:
                     cv2.imshow(self.name, current_pic)
                     
         except Exception as e:
             logger.error(f"Error in display loop for window '{self.name}': {e}", exc_info=True)
-        finally:
             self.close()
 
     def _adjust_window_initial_state(self):
@@ -193,8 +195,6 @@ class Cv2Window:
         if key == 27: # ESC
             logger.debug("ESC pressed, closing window.")
             self.close()
-        elif key == 255:
-            pass
         else:
             logger.debug(f"Key pressed: {key}")
 
@@ -241,12 +241,14 @@ class Cv2Window:
 
 
 if __name__ == "__main__":
+    logger.setLevel(logging.DEBUG)
     pic = np.zeros((480, 640, 3), dtype=np.uint8)
     cv2.putText(pic, "Image 1", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
     pic_2 = np.zeros((480, 640, 3), dtype=np.uint8)
     cv2.putText(pic_2, "Image 2", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
     def new_board_event(key):
+        logger.info(f"Key pressed: {key}")
         if key == ord(' '):
             print("Space bar pressed!")
         elif key == 27:
@@ -255,7 +257,7 @@ if __name__ == "__main__":
     with Cv2Window(pic, "Test Window", fps=30, auto_scale=0.5) as cv2_window:
         cv2_window.change_board_event(new_board_event)
         cv2_window.show()
-        for i in range(10):
+        for i in range(15):
             time.sleep(0.1)
             if i % 2 == 0:
                 cv2_window.update(pic_2)
