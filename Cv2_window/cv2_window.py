@@ -233,7 +233,6 @@ class Cv2Window:
             logger.debug(f"Right Drag: ({x}, {y})")
 
     def __enter__(self):
-        self.show()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -253,8 +252,9 @@ if __name__ == "__main__":
         elif key == 27:
             print("ESC pressed via custom handler!")
 
-    with Cv2Window(pic, "Test Window", fps=30, auto_scale=0.5) as cv2_window: # It will automatically show and close the window.
+    with Cv2Window(pic, "Test Window", fps=30, auto_scale=0.5) as cv2_window:
         cv2_window.change_board_event(new_board_event)
+        cv2_window.show()
         for i in range(10):
             time.sleep(0.1)
             if i % 2 == 0:
