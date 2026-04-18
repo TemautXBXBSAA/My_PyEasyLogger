@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import threading
 from typing import Callable, Optional
-import pyautogui
+import ctypes
 import time
 import logging
 
@@ -166,7 +166,11 @@ class Cv2Window:
         and auto_scale setting.
         """
         try:
-            screen_width, screen_height = pyautogui.size()
+            # Use ctypes to get screen width and height via Windows API
+            user32 = ctypes.windll.user32
+            screen_width = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+            screen_height = user32.GetSystemMetrics(1) # SM_CYSCREEN
+            
             h, w = self._pic.shape[:2]
             scale_w = (screen_width * self.auto_scale) / w
             scale_h = (screen_height * self.auto_scale) / h
