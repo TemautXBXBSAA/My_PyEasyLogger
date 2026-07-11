@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import threading
-from typing import Callable, Optional, Any
+from typing import Callable, Optional, Any, ParamSpec, TypeVar, Concatenate
 import time
 import logging
 import tkinter
@@ -20,19 +20,21 @@ except ImportError:
         logger.addHandler(handler)
     logger.warning("'log' module not found, using default logger")
 
+__all__ = ["CV2Window","cv2_window", "logger"]
+
 class CV2Window:
     """
     A thread-safe OpenCV window display class.
     Supports multi-threaded image updates, custom mouse/keyboard event handling, 
     automatic scaling, and centered display.
     """
-    def __init__(self, pic: np.ndarray, name: str, fps: int = 24, auto_scale: float = 0.8, auto_copy: bool = False):
+    def __init__(self, pic: np.ndarray, name: str, fps: int = 24, auto_scale: float = 0.8, auto_copy: bool = False, no_lock = False):
         """
         Initialize CV2Window.
         You should use "show()" to start the window display, use "update()" to update the image, 
         and "close()" to close the window.
-        You could use "self.args: dict[name,value]" to store or get additional information.
         If image may be modified, please set "auto_copy" to True.
+        You could use "self.args: dict[name,value]" to store or get additional information.
 
         :param pic: Initial image to display (numpy array).
         :param name: Window name.
@@ -50,6 +52,7 @@ class CV2Window:
         self.name = name
         self.fps = max(1, fps)
         self.auto_scale = max(0, min(1.0, auto_scale))
+        self.no_lock = no_lock
         self.args: dict = {}
 
         self._running = False
@@ -117,6 +120,10 @@ class CV2Window:
         
         :param pic: New image data.
         """
+        if self.no_lock:
+            self._pic = pic.copy() if self.auto_copy else pic
+            return
+
         if pic is None or not isinstance(pic, np.ndarray):
             logger.warning("Invalid image provided to update().")
             return
@@ -202,10 +209,15 @@ class CV2Window:
                     logger.exception(f"Error in show callback for window '{self.name}': {e}")
 
                 # Display
-                with self._pic_lock:
-                    current_pic = self._pic.copy() if self.auto_copy else self._pic
-                if current_pic is not None and current_pic.size > 0:
-                    cv2.imshow(self.name, current_pic)
+                if self.no_lock:
+                    cv2.imshow(self.name, self._pic)
+                else:
+                    with self._pic_lock:
+                        if self._pic is not None and self._pic.size > 0:
+                            cv2.imshow(self.name, self._pic)
+                #    current_pic = self._pic.copy() if self.auto_copy else self._pic
+                #if current_pic is not None and current_pic.size > 0:
+                #    cv2.imshow(self.name, current_pic)
         
         except Exception as e:
             logger.exception(f"Error in display loop for window '{self.name}': {e}", exc_info=True)
@@ -298,88 +310,5 @@ class CV2Window:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
         return False
-
-
-if __name__ == "__main__":
-    logger.setLevel(logging.DEBUG)
-    pic = np.zeros((480, 640, 3), dtype=np.uint8)
-    cv2.putText(pic, "Image 1", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-    pic_2 = np.zeros((480, 640, 3), dtype=np.uint8)
-    cv2.putText(pic_2, "Image 2", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-    def new_board_event(key):
-        logger.info(f"Key pressed: {key}")
-        if key == ord(' '):
-            print("Space bar pressed!")
-        elif key == 27:
-            print("ESC pressed via custom handler!")
-
-    # Test 1: Single window usage (Original test)
-    with CV2Window(pic, "Test Window", fps=30, auto_scale=0.5) as cv2_window:
-        cv2_window.change_board_event(new_board_event)
-        cv2_window.show()
-        for i in range(15):
-            time.sleep(0.1)
-            if i % 2 == 0:
-                cv2_window.update(pic_2)
-            else:
-                cv2_window.update(pic)
-    print("Application finished single window test.")
-
-    # Test 2: Multi-window usage
-    print("Starting multi-window test...")
-    win1_img = np.ones((400, 400, 3), dtype=np.uint8) * 255  # White background
-    cv2.putText(win1_img, "Window 1", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
-    win2_img = np.ones((400, 400, 3), dtype=np.uint8) * 0  # Black background
-    cv2.putText(win2_img, "Window 2", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-    window1 = CV2Window(win1_img, "Multi-Test Win 1", fps=2, auto_scale=0.4)
-    window2 = CV2Window(win2_img, "Multi-Test Win 2", fps=24, auto_scale=0.4)
-
-    try:
-        start_time = time.time()
-
-        def update_img(CV2Window:CV2Window,base_img):
-            current_time = time.time()
-            time_struct = time.localtime(current_time)
-            milliseconds = int((current_time % 1) * 1000)
-            timestamp = time.strftime("%H:%M:%S", time_struct) + f".{milliseconds:03d}"
-            if CV2Window.args.get("last_time", 0) == 0:
-                CV2Window.args["last_time"] = time.time()
-                return
-            current_time = time.time()
-            last_time = CV2Window.args.get("last_time", current_time)
-            dt = current_time - last_time
-            if dt <= 0:
-                return
-            fps_val = 1.0 / dt
-            CV2Window.args["fps"] = fps_val
-            CV2Window.args["last_time"] = current_time
-            img = base_img.copy()
-            cv2.putText(img, timestamp, (50, 350), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-            fps_text = f"FPS: {fps_val:.2f}"
-            cv2.putText(img, fps_text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-            CV2Window.update(img)
-        def get_fps_windows1():
-            update_img(window1,win1_img)
-        def get_fps_windows2():
-            update_img(window2,win2_img)
-
-        window1.set_show_callback(get_fps_windows1)
-        window2.set_show_callback(get_fps_windows2)
-
-        window1.show()
-        window2.show()
-
-        for i in range(1000):
-            if not window1._running and not window2._running:
-                break
-            time.sleep(1) # Run for 10 seconds
-        print("Multi-window test finished. Closing windows...")
-    except Exception as e:
-        logger.error(f"Error during multi-window test: {e}")
-    finally:
-        window1.close()
-        window2.close()
-    print("All tests completed.")
+    
+cv2_window = CV2Window
